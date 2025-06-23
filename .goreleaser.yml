@@ -1,0 +1,87 @@
+# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+# Visit https://goreleaser.com for documentation on how to customize this
+# behavior.
+before:
+  hooks:
+    # this is just an example and not a requirement for provider building/publishing
+    - go mod tidy
+builds:
+- env:
+    # goreleaser does not work with CGO, it could also complicate
+    # usage by users in CI/CD systems like HCP Terraform where
+    # they are unable to install libraries.
+    - CGO_ENABLED=0
+  mod_timestamp: '{{ .CommitTimestamp }}'
+  flags:
+    - -trimpath
+  ldflags:
+    - '-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}'
+  goos:
+    # - freebsd
+    - windows
+    - linux
+    - darwin
+  goarch:
+    - amd64
+    # - '386'
+    # - arm
+    - arm64
+  ignore:
+    - goos: darwin
+      goarch: '386'
+  binary: '{{ .ProjectName }}_v{{ .Version }}'
+archives:
+- format: zip
+  name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+checksum:
+  extra_files:
+    - glob: 'terraform-registry-manifest.json'
+      name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
+  name_template: '{{ .ProjectName }}_{{ .Version }}_SHA256SUMS'
+  algorithm: sha256
+signs:
+  - artifacts: checksum
+    cmd: nvsec
+    signature: "${artifact}.sig"
+    args:
+      - 3s
+      - submit
+      - --job_type
+      - NGC_TF_PROVIDER
+      - --input_file
+      - "${artifact}"
+      - --description
+      - "CI Generate"
+      - --client_id
+      - "{{ .Env.CODE_SIGN_SSA_CLIENT_ID }}"
+      - --client_secret
+      - "{{ .Env.CODE_SIGN_SSA_CLIENT_SECRET }}"
+      - --scope
+      - SIGNING_NGC_TF_PROVIDER
+      - --download
+      - --result_filename
+      - ${signature}
+release:
+  github:
+    owner: NVIDIA
+    name: terraform-provider-ngc
+  extra_files:
+    - glob: 'terraform-registry-manifest.json'
+      name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
+changelog:
+  disable: true
+artifactories:
+  - name: urm
+    target: https://urm.nvidia.com/artifactory/sw-backstage-terraform-local/nvidia/ngc/{{ .Version }}/
+    checksum: true
+    meta: true
+    signature: true
